@@ -1,9 +1,7 @@
 package com.sample.common;
 
-import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.methods.HttpGet;
 import org.apache.http.config.Registry;
 import org.apache.http.config.RegistryBuilder;
 import org.apache.http.config.SocketConfig;
@@ -14,8 +12,6 @@ import org.apache.http.conn.ssl.TrustSelfSignedStrategy;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.ssl.SSLContexts;
-import org.apache.http.util.EntityUtils;
-
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
@@ -23,11 +19,8 @@ import javax.net.ssl.SSLSession;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.security.KeyManagementException;
+import java.security.GeneralSecurityException;
 import java.security.KeyStore;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.CertificateException;
 
 
 public class HttpClientManager {
@@ -47,7 +40,7 @@ public class HttpClientManager {
      */
     private static final boolean TCP_NO_DELAY         = true;
     /**
-     * Parameter for enable/disable port be reused by other process after this process be killed.
+     * Parameter for enable/disable port be reused by other process immediately after this process be killed.
      */
     private static final boolean SOCKET_REUSE_ADDRESS = false;
     /**
@@ -75,24 +68,97 @@ public class HttpClientManager {
 
 
     /**
-     * @param trustStoreType JKS(Default),JCEKS(Recommended),PKCS12,BKS,UBER
+     * Create registry for public (any sites will be trusted)
+     */
+    public static Registry<ConnectionSocketFactory> createNonCheckRegistry() throws GeneralSecurityException {
+        SSLContext sslContext = SSLContexts.custom().loadTrustMaterial(null, new TrustSelfSignedStrategy()).build();
+        SSLConnectionSocketFactory sslFactory = new SSLConnectionSocketFactory(sslContext, new HostnameVerifier() {
+            @Override
+            public boolean verify(String s, SSLSession sslSession) {
+                return true;
+            }
+        });
+        Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory>create()
+                .register("http", PlainConnectionSocketFactory.getSocketFactory())
+                .register("https", sslFactory)
+                .build();
+        return registry;
+    }
+
+    /**
+     * Create registry for sites included by trust store
+     *
+     * @param trustStoreType JKS(Default value),JCEKS(Recommended value),PKCS12,BKS,UBER
      * @param trustStorePath
      * @param password       password to enter trust store
-     * @return
-     * @throws KeyStoreException
-     * @throws IOException
-     * @throws CertificateException
-     * @throws NoSuchAlgorithmException
-     * @throws KeyManagementException
      */
-    private static SSLContext createSSLContext(String trustStoreType, String trustStorePath, String password)
-            throws KeyStoreException, IOException, CertificateException, NoSuchAlgorithmException, KeyManagementException {
+    public static Registry<ConnectionSocketFactory> createRegistry4Cer(String trustStoreType, String trustStorePath,
+            String password) throws GeneralSecurityException, IOException {
         try (InputStream stream = new FileInputStream(trustStorePath)) {
             KeyStore trustStore = KeyStore.getInstance(trustStoreType);
             trustStore.load(stream, password.toCharArray());
-            return SSLContexts.custom().loadTrustMaterial(trustStore, new TrustSelfSignedStrategy()).build();
+            SSLContext sslContext = SSLContexts.custom()
+                                               .loadTrustMaterial(trustStore, new TrustSelfSignedStrategy())
+                                               .build();
+            SSLConnectionSocketFactory sslFactory = new SSLConnectionSocketFactory(sslContext);
+            Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory>create()
+                    .register("http", PlainConnectionSocketFactory.getSocketFactory())
+                    .register("https", sslFactory)
+                    .build();
+            return registry;
         }
     }
+
+    /**
+     * Create registry for sites trusted by system, or included by trust store
+     *
+     * @param trustStoreType JKS(Default value),JCEKS(Recommended value),PKCS12,BKS,UBER
+     * @param trustStorePath
+     * @param password       password to enter trust store
+     */
+    public static Registry<ConnectionSocketFactory> createRegistry4SysOrCer(String trustStoreType, String trustStorePath,
+            String password) throws GeneralSecurityException, IOException {
+        try (InputStream stream = new FileInputStream(trustStorePath)) {
+            KeyStore trustStore = KeyStore.getInstance(trustStoreType);
+            trustStore.load(stream, password.toCharArray());
+            SSLContext sslContext = SSLContexts.custom()
+                                               .loadTrustMaterial(null, new TrustSelfSignedStrategy())
+                                               .loadKeyMaterial(trustStore, password.toCharArray())
+                                               .build();
+            SSLConnectionSocketFactory sslFactory = new SSLConnectionSocketFactory(sslContext, new HostnameVerifier() {
+                @Override
+                public boolean verify(String s, SSLSession sslSession) {
+                    return true;
+                }
+            });
+            Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory>create()
+                    .register("http", PlainConnectionSocketFactory.getSocketFactory())
+                    .register("https", sslFactory)
+                    .build();
+            return registry;
+        }
+    }
+
+    /**
+     * Create registry for internet public sites
+     *
+     * @return registry will be used to create pool
+     */
+    public static Registry<ConnectionSocketFactory> createRegistry4Sys() {
+        SSLContext sslContext = SSLContexts.createSystemDefault();
+        SSLConnectionSocketFactory sslFactory = new SSLConnectionSocketFactory(sslContext, new HostnameVerifier() {
+            @Override
+            public boolean verify(String s, SSLSession sslSession) {
+                return true;
+            }
+        });
+        Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory>create()
+                .register("http", PlainConnectionSocketFactory.getSocketFactory())
+                .register("https", sslFactory)
+                .build();
+        return registry;
+    }
+
 
     /**
      * @param registry       Connection socket factory
@@ -106,8 +172,9 @@ public class HttpClientManager {
      * @param soKeepAlive    If true, client will send idle packet to check server alive
      * @return Connection pool
      */
-    private static PoolingHttpClientConnectionManager createPool(Registry<ConnectionSocketFactory> registry, int maxTotal, int maxPerRoute,
-            boolean tcpNoDelay, boolean soReuseAddress, int socketTimeout, int soLinger, boolean soKeepAlive) {
+    public static PoolingHttpClientConnectionManager createPool(Registry<ConnectionSocketFactory> registry,
+            int maxTotal, int maxPerRoute, boolean tcpNoDelay, boolean soReuseAddress, int socketTimeout,
+            int soLinger, boolean soKeepAlive) {
         PoolingHttpClientConnectionManager manager = registry == null ? new PoolingHttpClientConnectionManager()
                 : new PoolingHttpClientConnectionManager(registry);
         manager.setMaxTotal(maxTotal);
@@ -125,68 +192,33 @@ public class HttpClientManager {
         return manager;
     }
 
-    private static PoolingHttpClientConnectionManager createDefaultPool(Registry<ConnectionSocketFactory> registry) {
+    /**
+     * Create connection pool with default parameters
+     */
+    public static PoolingHttpClientConnectionManager createDefaultPool(Registry<ConnectionSocketFactory> registry) {
         return createPool(registry, MAX_TOTAL, MAX_PER_ROUTE,
-                          true, true, SOCKET_TIMEOUT, 60, false);
+                          TCP_NO_DELAY, SOCKET_REUSE_ADDRESS, SOCKET_TIMEOUT, SOCKET_LINGER, SOCKET_KEEP_ALIVE);
     }
 
-    private static PoolingHttpClientConnectionManager createSslDefaultPool(SSLContext sslContext)
-            throws KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
 
-        SSLConnectionSocketFactory sslFactory = new SSLConnectionSocketFactory(sslContext);
-        Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory>create()
-                .register("http", PlainConnectionSocketFactory.getSocketFactory())
-                .register("https", sslFactory)
-                .build();
-        return createDefaultPool(registry);
-    }
-
-    private static PoolingHttpClientConnectionManager createSslSkipPool()
-            throws KeyStoreException, NoSuchAlgorithmException, KeyManagementException {
-        SSLContext sslContext = SSLContexts.custom().loadTrustMaterial(null, new TrustSelfSignedStrategy()).build();
-        SSLConnectionSocketFactory sslFactory = new SSLConnectionSocketFactory(sslContext, new HostnameVerifier() {
-            @Override
-            public boolean verify(String s, SSLSession sslSession) {
-                return true;
-            }
-        });
-        Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory>create()
-                .register("http", PlainConnectionSocketFactory.getSocketFactory())
-                .register("https", sslFactory)
-                .build();
-        return createDefaultPool(registry);
-    }
-
-    private static RequestConfig createRequestConfig() {
+    /**
+     * Create request config by default parameters
+     */
+    public static RequestConfig createRequestConfig() {
         return RequestConfig.custom()
                             .setConnectionRequestTimeout(CONNECTION_REQUEST_TIMEOUT)
                             .setConnectTimeout(CONNECTION_TIMEOUT)
                             .setSocketTimeout(SOCKET_TIMEOUT).build();
     }
 
-    public static HttpClient createHttpClient(PoolingHttpClientConnectionManager manager) {
+    /**
+     * Create http client
+     */
+    public static HttpClient createHttpClient(PoolingHttpClientConnectionManager manager, RequestConfig requestConfig) {
         return HttpClients.custom()
                           .setConnectionManager(manager)
-                          .setDefaultRequestConfig(createRequestConfig())
+                          .setDefaultRequestConfig(requestConfig)
                           .build();
-    }
-
-    public static void main(String[] args) throws NoSuchAlgorithmException, KeyStoreException, KeyManagementException, IOException, CertificateException {
-        SSLContext sslContext = SSLContexts.createSystemDefault();
-        SSLContext sslContext1 = HttpClientManager.createSSLContext("JKS",
-                                                                    "c:/tomcat9/conf/tomcat.keystore", "tomcat");
-        PoolingHttpClientConnectionManager manager       = HttpClientManager.createSslDefaultPool(sslContext1);
-        PoolingHttpClientConnectionManager manager2      = HttpClientManager.createSslSkipPool();
-        RequestConfig                      requestConfig = createRequestConfig();
-        HttpClient httpClient = HttpClients.custom()
-                                           .setConnectionManager(manager2)
-                                           .setDefaultRequestConfig(requestConfig)
-                                           .build();
-        HttpGet      httpGet  = new HttpGet("https://localhost:8443/index.jsp");
-        HttpResponse response = httpClient.execute(httpGet);
-        System.out.println("Status:\r\n" + response.getStatusLine());
-        System.out.println("Body:\r\n" + EntityUtils.toString(response.getEntity(), "utf-8"));
-        manager.close();
     }
 
 }
