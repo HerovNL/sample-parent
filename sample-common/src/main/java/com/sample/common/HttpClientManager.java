@@ -42,7 +42,7 @@ public class HttpClientManager {
     /**
      * Parameter for enable/disable port be reused by other process immediately after this process be killed.
      */
-    private static final boolean SOCKET_REUSE_ADDRESS = false;
+    private static final boolean SOCKET_REUSE_ADDRESS = true;
     /**
      * Timeout(s) for close TCP, it timeout not closed, RST message will be used to close connection.
      */
