@@ -11,9 +11,8 @@ import java.sql.Savepoint;
 import java.sql.ResultSet;
 
 abstract public class DbAccess<T extends HasId> {
-    private static Log LOGGER = LogFactory.getLog(DbAccess.class);
-
-    private DataSource dataSource;
+    private static Log        LOGGER = LogFactory.getLog(DbAccess.class);
+    private        DataSource dataSource;
 
     abstract public T newInstance();
 
@@ -26,31 +25,23 @@ abstract public class DbAccess<T extends HasId> {
     abstract public void setInsertData(PreparedStatement stmt, T instance, int parentId);
 
     public void insert(T instance, int parentId) throws SQLException {
-
         try (
                 Connection connection = dataSource.getConnection();
                 PreparedStatement stmt = statement4Insert(connection);
         ) {
-            if (stmt == null) {
-                throw new SQLException("Invalid SQL statement");
-            }
             connection.setAutoCommit(false);
             setInsertData(stmt, instance, parentId);
-
-            try {
-                stmt.executeUpdate();
-                ResultSet resultSet = stmt.getGeneratedKeys();
+            stmt.executeUpdate();
+            try (ResultSet resultSet = stmt.getGeneratedKeys()) {
                 resultSet.next();
                 instance.setId(resultSet.getInt(1));
-                resultSet.close();
                 insertChildren(connection, instance);
                 connection.commit();
             } catch (SQLException e0) {
-                LOGGER.error("Failed to execute SQL insert", e0);
                 try {
                     connection.rollback();
                 } catch (SQLException e1) {
-                    LOGGER.error("Failed to rollback SQL insert", e1);
+                    throw e1;
                 }
                 throw e0;
             }
@@ -74,15 +65,15 @@ abstract public class DbAccess<T extends HasId> {
                 insertChildren(connection, instance);
                 connection.commit();
             } catch (SQLException e0) {
-                try{
-                    if(savepoint == null){
+                try {
+                    if (savepoint == null) {
                         connection.rollback();
                         LOGGER.error("Failed to execute SQL insert", e0);
-                    }else{
+                    } else {
                         connection.rollback(savepoint);
                         LOGGER.error("Failed to execute SQL insert children", e0);
                     }
-                }catch (SQLException e1) {
+                } catch (SQLException e1) {
                     LOGGER.error("Failed to execute rollback SQL insert", e1);
                 }
                 throw e0;
