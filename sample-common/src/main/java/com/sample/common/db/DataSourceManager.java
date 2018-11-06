@@ -40,26 +40,36 @@ public class DataSourceManager {
         return src;
     }
 
-    public static HikariDataSource createSource(String name,String jdbcUrl,String userName,String password,
-            int connectionTimeout,int idleTimeout,int maxLifeTime){
+    // Hikar configuration reference: https://github.com/brettwooldridge/HikariCP
+    public static HikariDataSource createSource(String name, String jdbcUrl, String userName, String password,
+            int connectionTimeout, int idleTimeout, int maxLifeTime, int poolSize) {
         HikariDataSource src = new HikariDataSource();
         src.setPoolName(name);
         src.setJdbcUrl(jdbcUrl);
         src.setUsername(userName);
         src.setPassword(password);
         src.setDriverClassName("com.mysql.jdbc.Driver"); // Eg: here is for MySQL
+        // src.setReadOnly(true); //If write not permitted
 
-        src.setConnectionTimeout(connectionTimeout); // Eg: 30000ms Timeout for client to get connection from pool
-        src.setIdleTimeout(idleTimeout); // Eg: 60000ms If connection idle timeout, it will be removed from pool
+        // Eg: 30000ms Timeout for client to get connection from pool, otherwise will throw SQLException
+        src.setConnectionTimeout(connectionTimeout);
+        src.setIdleTimeout(idleTimeout); // Eg: 600000ms=10min If connection idle timeout, it will be removed from pool
+        // Here maxLifeTime should be at least 30s less than wait_timeout(MySQL server: show variables like '%timeout%')
         src.setMaxLifetime(maxLifeTime); // Eg: 1800000ms=30min Unused connection timeout, it will be removed from pool
-
+        // Eg: 8, Maximum connections in pool including idle and in-use, default:10, suggest=(CPUCore*2)+DisInRaid
+        src.setMaximumPoolSize(poolSize);
+        // Eg: 4, Minimum connections in pool, Hikari suggest not set this parameter means using fixed size pool
+        // src.setMinimumIdle(poolSize);
 
         return src;
     }
+
     private static void append(StringBuilder builder, Object... args) {
         for (int i = 0, len = args.length; i < len; i++) {
             Object arg = args[i];
-            if (arg instanceof String) {
+            if (arg == null) {
+                builder.append("null");
+            } else if (arg instanceof String) {
                 builder.append((String) arg);
             } else {
                 builder.append(arg.toString());

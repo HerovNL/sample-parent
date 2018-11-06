@@ -24,6 +24,8 @@ abstract public class DbAccess<T extends HasId> {
 
     abstract public void setInsertData(PreparedStatement stmt, T instance, int parentId);
 
+    abstract void insertChildren(Connection connection, T instance) throws SQLException;
+
     public void insert(T instance, int parentId) throws SQLException {
         try (
                 Connection connection = dataSource.getConnection();
@@ -79,9 +81,6 @@ abstract public class DbAccess<T extends HasId> {
                 throw e0;
             }
         }
-    }
-
-    public void insertChildren(Connection connection, T instance) throws SQLException {
     }
 
 
