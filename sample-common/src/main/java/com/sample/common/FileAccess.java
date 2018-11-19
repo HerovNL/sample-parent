@@ -2,12 +2,12 @@ package com.sample.common;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import sun.nio.ch.DirectBuffer;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.file.*;
@@ -169,7 +169,9 @@ public class FileAccess {
             channel.read(buffer);
             buffer.flip();
             CharBuffer charBuf = decoder.decode(buffer);
-            return charBuf.toString();
+            String     result  = charBuf.toString();
+            ((DirectBuffer) buffer).cleaner().clean();
+            return result;
         }
     }
 
@@ -211,13 +213,11 @@ public class FileAccess {
                                AclEntryPermission.WRITE_OWNER),
                     user);
         }
-
-        try (SeekableByteChannel fromChannel = Files.newByteChannel(from, READ, readPermission);
-             SeekableByteChannel toChannel = Files.newByteChannel(to, OVERWRITE, writePermission);) {
-            ByteBuffer buffer = ByteBuffer.allocate((int) fromChannel.size());
-            fromChannel.read(buffer);
-            buffer.flip();
-            toChannel.write(buffer);
+        try (
+                FileChannel fromChannel = FileChannel.open(from, READ, readPermission);
+                FileChannel toChannel = FileChannel.open(to, OVERWRITE, writePermission);
+        ) {
+            fromChannel.transferTo(0, fromChannel.size(), toChannel);
         }
     }
 
@@ -226,8 +226,9 @@ public class FileAccess {
         Path to1  = Paths.get("C:\\develop\\node\\server1.js");
         Path to2  = Paths.get("C:\\develop\\node\\server2.js");
         Path to3  = Paths.get("C:\\develop\\node\\server2.js");
+        System.out.print(readText(from, "UTF-8"));
         copy(from, to1);
         secureCopy(from, to2);
-        copyWithAttributes(from,to3);
+        copyWithAttributes(from, to3);
     }
 }
