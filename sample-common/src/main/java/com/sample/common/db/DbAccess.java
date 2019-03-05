@@ -10,7 +10,7 @@ import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.ResultSet;
 
-abstract public class DbAccess<T extends HasId> {
+abstract public class DbAccess<T extends Incremental> {
     private static Log        LOGGER = LogFactory.getLog(DbAccess.class);
     private        DataSource dataSource;
 

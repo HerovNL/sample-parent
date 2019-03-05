@@ -1,7 +1,6 @@
 package com.sample.common.db;
 
-public interface HasId {
+public interface Incremental {
     void setId(int id);
-
     int getId();
 }
